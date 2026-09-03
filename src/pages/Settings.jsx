@@ -2,9 +2,16 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { Plus, X, Shield, Trash2, Edit } from 'lucide-react';
+import { Plus, X, Shield, Trash2, Edit, UserPlus } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 
 const ROLES = ['admin', 'office_manager', 'technician'];
+
+function createAltClient() {
+    return createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false }
+    });
+}
 
 export default function Settings() {
     const { profile } = useAuth();
@@ -13,6 +20,7 @@ export default function Settings() {
     const [pricebook, setPricebook] = useState([]);
     const [activeTab, setActiveTab] = useState('pricebook');
     const [showPricebookForm, setShowPricebookForm] = useState(false);
+    const [showAddUser, setShowAddUser] = useState(false);
     const [editItem, setEditItem] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -23,43 +31,10 @@ export default function Settings() {
             supabase.from('profiles').select('*').order('created_at'),
             supabase.from('pricebook').select('*').order('category')
         ]);
-        let pbData = pbRes.data || [];
-
-        // Auto-seed pricebook if empty
-        if (pbData.length === 0) {
-            const seedData = [
-                { category: 'Labor', item_name: 'Diagnostic / Service Call', description: 'Standard residential service call and diagnostic', price: 150 },
-                { category: 'Labor', item_name: 'Emergency After-Hours Call', description: 'After-hours or weekend emergency dispatch', price: 250 },
-                { category: 'Labor', item_name: 'Preventative Maintenance', description: 'Seasonal tune-up and inspection', price: 120 },
-                { category: 'Labor', item_name: 'Hourly Labor - Lead Tech', description: 'Standard hourly labor rate', price: 125 },
-                { category: 'Parts', item_name: 'Capacitor 45/5 uF', description: 'Dual run capacitor for condenser', price: 45 },
-                { category: 'Parts', item_name: '30A 1-Pole Contactor', description: 'Replacement AC contactor', price: 35 },
-                { category: 'Parts', item_name: 'Thermostat (Basic)', description: 'Standard non-programmable thermostat', price: 60 },
-                { category: 'Parts', item_name: 'Thermostat (Smart)', description: 'WiFi enabled smart thermostat', price: 250 },
-                { category: 'Parts', item_name: 'Furnace Control Board', description: 'OEM replacement control board', price: 180 },
-                { category: 'Parts', item_name: 'Flame Sensor', description: 'Standard furnace flame sensor', price: 25 },
-                { category: 'Parts', item_name: 'Ignitor', description: 'Hot surface ignitor', price: 45 },
-                { category: 'Equipment', item_name: '3-Ton AC Condenser', description: '14 SEER Condensing Unit', price: 2200 },
-                { category: 'Equipment', item_name: '80% Gas Furnace', description: '80k BTU Gas Furnace', price: 1400 },
-                { category: 'Ducts', item_name: '6" Flex Duct (25ft)', description: 'Insulated R-6 flex ducting', price: 85 },
-                { category: 'Refrigerant', item_name: 'R-410A Refrigerant (per lb)', description: 'System refrigerant recharge', price: 65 },
-                { category: 'Refrigerant', item_name: 'R-22 Refrigerant (per lb)', description: 'Legacy system refrigerant recharge', price: 120 },
-                { category: 'Refrigerant', item_name: 'Nitrogen Pressure Test', description: 'System leak test with nitrogen', price: 75 },
-                { category: 'Fees', item_name: 'EPA Disposal Fee', description: 'Safe recovery and disposal of refrigerants', price: 40 },
-                { category: 'Fees', item_name: 'City HVAC Permit', description: 'Standard mechanical permit fee', price: 150 },
-                { category: 'Fees', item_name: 'Diagnostic Waiver', description: 'Diagnostic fee waived with repair', price: -150 }
-            ];
-
-            await supabase.from('pricebook').insert(seedData);
-
-            // Re-fetch after seeding
-            const newPbRes = await supabase.from('pricebook').select('*').order('category');
-            pbData = newPbRes.data || [];
-            success('Automatically seeded standard HVAC Pricebook items!');
-        }
+        
 
         setUsers(usersRes.data || []);
-        setPricebook(pbData);
+        setPricebook(pbRes.data || []);
         setLoading(false);
     }
 
@@ -92,6 +67,28 @@ export default function Settings() {
         loadUsers();
     }
 
+    async function handleAddUser(userData) {
+        setLoading(true);
+        try {
+            const altSupabase = createAltClient();
+            const { error: signUpError } = await altSupabase.auth.signUp({
+                email: userData.email,
+                password: userData.password,
+                options: {
+                    data: { full_name: userData.full_name, role: userData.role }
+                }
+            });
+            if (signUpError) throw signUpError;
+
+            success(`User ${userData.full_name} created successfully!`);
+            setShowAddUser(false);
+            loadUsers();
+        } catch (err) {
+            showError(err.message);
+            setLoading(false);
+        }
+    }
+
     if (loading) return <div className="loading-page"><div className="loading-spinner" /></div>;
 
     return (
@@ -111,8 +108,13 @@ export default function Settings() {
             {activeTab === 'users' && (
                 <>
                     <div className="card">
-                        <div className="card-header">
-                            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Shield size={18} /> User Management</h3>
+                        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Shield size={18} /> User Management
+                            </h3>
+                            <button className="btn btn-primary btn-sm" onClick={() => setShowAddUser(true)}>
+                                <UserPlus size={16} /> Add Staff Member
+                            </button>
                         </div>
 
                         <div className="table-container" style={{ border: 'none' }}>
@@ -225,6 +227,62 @@ export default function Settings() {
                     onClose={() => { setShowPricebookForm(false); setEditItem(null); }}
                 />
             )}
+
+            {showAddUser && (
+                <AddUserModal
+                    onSave={handleAddUser}
+                    onClose={() => setShowAddUser(false)}
+                />
+            )}
+        </div>
+    );
+}
+
+function AddUserModal({ onSave, onClose }) {
+    const [form, setForm] = useState({
+        full_name: '',
+        email: '',
+        password: '',
+        role: 'technician'
+    });
+
+    const handleChange = e => setForm(p => ({ ...p, [e.target.name]: e.target.value }));
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h3>Create New Staff Member</h3>
+                    <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
+                </div>
+                <form onSubmit={e => { e.preventDefault(); onSave(form); }}>
+                    <div className="form-group">
+                        <label className="form-label">Full Name</label>
+                        <input className="form-input" name="full_name" value={form.full_name} onChange={handleChange} required placeholder="John Doe" />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Email Address</label>
+                        <input className="form-input" name="email" type="email" value={form.email} onChange={handleChange} required placeholder="john@example.com" />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Temporary Password</label>
+                        <input className="form-input" name="password" type="password" value={form.password} onChange={handleChange} required minLength={6} placeholder="••••••••" />
+                        <span style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)' }}>They can change this after logging in.</span>
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Role</label>
+                        <select className="form-select" name="role" value={form.role} onChange={handleChange}>
+                            <option value="technician">Technician</option>
+                            <option value="office_manager">Office Manager</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div className="modal-footer">
+                        <button className="btn btn-secondary" type="button" onClick={onClose}>Cancel</button>
+                        <button className="btn btn-primary" type="submit">Create User</button>
+                    </div>
+                </form>
+            </div>
         </div>
     );
 }
