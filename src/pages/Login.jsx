@@ -27,7 +27,7 @@ export default function Login() {
         <div className="login-page">
             <div className="login-card">
                 <div className="login-brand">
-                    <img src="/logo.png" alt="Company Logo" style={{ height: '60px', margin: '0 auto 10px', display: 'block', borderRadius: '8px' }} />
+                    <img src="/logo.svg" alt="Company Logo" style={{ height: '60px', margin: '0 auto 10px', display: 'block', borderRadius: '8px' }} />
                     <h1>Yanky's HVAC</h1>
                     <p>Sign in to your account</p>
                 </div>

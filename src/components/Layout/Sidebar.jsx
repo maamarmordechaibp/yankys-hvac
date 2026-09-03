@@ -42,7 +42,7 @@ export default function Sidebar({ isOpen, onClose }) {
             {isOpen && <div className="sidebar-overlay" onClick={onClose} />}
             <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
                 <div className="sidebar-brand">
-                    <img src="/logo.png" alt="Yanky's HVAC" style={{ width: 40, height: 40, borderRadius: 'var(--radius-lg)', objectFit: 'contain' }} />
+                    <img src="/logo.svg" alt="Yanky's HVAC" style={{ width: 40, height: 40, borderRadius: 'var(--radius-lg)', objectFit: 'contain' }} />
                     <div className="brand-text">
                         <h1>Yanky's HVAC</h1>
                         <span>Service CRM</span>

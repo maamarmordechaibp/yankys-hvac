@@ -342,7 +342,7 @@ function PrintableInvoice({ invoice, onClose }) {
                 {/* Print Content Starts Here */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
                     <div>
-                        <img src="/logo.png" alt="Company Logo" style={{ height: '60px', marginBottom: '10px' }} />
+                        <img src="/logo.svg" alt="Company Logo" style={{ height: '60px', marginBottom: '10px' }} />
                         <h2 style={{ fontSize: '24px', fontWeight: 800, margin: 0, color: '#1a1f35' }}>Yanky's HVAC</h2>
                         <p style={{ margin: '4px 0', fontSize: '14px', color: '#666' }}>123 Climate Way<br />Brooklyn, NY 11211<br />(555) 123-4567<br />billing@yankyshvac.com</p>
                     </div>
