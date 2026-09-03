@@ -1,15 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import {
-    ChevronLeft, ChevronRight, Plus, X, Clock, User
-} from 'lucide-react';
-import {
-    format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
-    addMonths, subMonths, eachDayOfInterval, isSameMonth, isToday,
-    addWeeks, subWeeks, isSameDay, addDays, subDays
-} from 'date-fns';
+import { ChevronLeft, ChevronRight, Plus, X, Clock, User, Calendar as CalendarIcon, Check } from 'lucide-react';
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addMonths, subMonths, eachDayOfInterval, isSameMonth, isToday, addWeeks, subWeeks, isSameDay, addDays, subDays } from 'date-fns';
+import { DndContext, useDraggable, useDroppable, DragOverlay, closestCenter, pointerWithin, rectIntersection } from '@dnd-kit/core';
 
 const JOB_TYPES = ['install', 'repair', 'maintenance', 'emergency', 'inspection'];
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -18,7 +13,7 @@ export default function Schedule() {
     const { profile, isManager } = useAuth();
     const { success, error: showError } = useToast();
     const [currentDate, setCurrentDate] = useState(new Date());
-    const [view, setView] = useState('month');
+    const [view, setView] = useState('day'); // Default to day view to show off tech grouping initially
     const [jobs, setJobs] = useState([]);
     const [customers, setCustomers] = useState([]);
     const [technicians, setTechnicians] = useState([]);
@@ -27,6 +22,7 @@ export default function Schedule() {
     const [selectedDate, setSelectedDate] = useState(null);
     const [selectedJob, setSelectedJob] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [activeDragJob, setActiveDragJob] = useState(null);
 
     useEffect(() => { loadData(); }, []);
 
@@ -61,7 +57,7 @@ export default function Schedule() {
                     job_id: data.id,
                     invoice_number: Date.now(),
                     status: 'draft',
-                    notes: `Invoice for ${jobData.job_type} job.`
+                    notes: \Invoice for \ job.\
                 };
                 const { error: invErr } = await supabase.from('invoices').insert(invoiceData);
                 if (invErr) showError('Job created, but invoice failed: ' + invErr.message);
@@ -106,7 +102,42 @@ export default function Schedule() {
         setShowJobForm(true);
     }
 
-    // Calendar days
+    async function handleDragEnd(event) {
+        const { active, over } = event;
+        setActiveDragJob(null);
+        if (!over) return;
+
+        const jobId = active.id.replace('job|', '');
+        const targetId = over.id; // Either 'date|2023-10-01' or 'tech|tech_id'
+
+        const job = jobs.find(j => j.id === jobId);
+        if (!job) return;
+
+        let updateData = {};
+
+        if (targetId.startsWith('date|')) {
+            const newDate = targetId.split('|')[1];
+            if (job.scheduled_date === newDate) return;
+            updateData.scheduled_date = newDate;
+        } else if (targetId.startsWith('tech|')) {
+            const newTechId = targetId.split('|')[1];
+            const techValue = newTechId === 'unassigned' ? null : newTechId;
+            if (job.technician_id === techValue) return;
+            updateData.technician_id = techValue;
+        }
+
+        // Optimistic update
+        setJobs(jobs.map(j => j.id === jobId ? { ...j, ...updateData } : j));
+
+        const { error } = await supabase.from('jobs').update(updateData).eq('id', jobId);
+        if (error) {
+            showError('Failed to reschedule job: ' + error.message);
+            loadData(); // Revert on failure
+        } else {
+            success(\Job \!\);
+        }
+    }
+
     const calendarDays = useMemo(() => {
         if (view === 'month') {
             const start = startOfWeek(startOfMonth(currentDate));
@@ -121,17 +152,19 @@ export default function Schedule() {
     }, [currentDate, view]);
 
     const headerText = view === 'month' ? format(currentDate, 'MMMM yyyy') :
-        view === 'week' ? `${format(calendarDays[0], 'MMM d')} - ${format(calendarDays[6], 'MMM d, yyyy')}` :
+        view === 'week' ? \\ - \\ :
             format(currentDate, 'EEEE, MMMM d, yyyy');
 
     if (loading) return <div className="loading-page"><div className="loading-spinner" /></div>;
 
+    const filteredTechs = teamFilter === 'all' ? technicians : technicians.filter(t => t.team === teamFilter);
+
     return (
-        <div>
+        <DndContext onDragStart={(e) => setActiveDragJob(jobs.find(j => j.id === e.active.id.replace('job|', '')))} onDragEnd={handleDragEnd} collisionDetection={pointerWithin}>
             <div className="page-header">
                 <div>
                     <h1>Schedule</h1>
-                    <p>Manage jobs and technician schedules</p>
+                    <p>Manage jobs, assignments, and drag-and-drop to reschedule</p>
                 </div>
                 {isManager() && (
                     <button className="btn btn-primary" onClick={() => { setSelectedDate(format(new Date(), 'yyyy-MM-dd')); setSelectedJob(null); setShowJobForm(true); }}>
@@ -147,15 +180,17 @@ export default function Schedule() {
                         <h3>{headerText}</h3>
                         <button className="btn btn-ghost btn-icon" onClick={navigateNext}><ChevronRight size={18} /></button>
                     </div>
-                    <div className="filter-tabs" style={{ display: 'flex', gap: '16px' }}>
-                        <div style={{ display: 'flex', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', padding: '2px' }}>
-                            <button className={`filter-tab ${teamFilter === 'all' ? 'active' : ''}`} onClick={() => setTeamFilter('all')} style={{ padding: '4px 12px', fontSize: 'var(--font-sm)' }}>All Teams</button>
-                            <button className={`filter-tab ${teamFilter === 'install' ? 'active' : ''}`} onClick={() => setTeamFilter('install')} style={{ padding: '4px 12px', fontSize: 'var(--font-sm)' }}>Install</button>
-                            <button className={`filter-tab ${teamFilter === 'repair' ? 'active' : ''}`} onClick={() => setTeamFilter('repair')} style={{ padding: '4px 12px', fontSize: 'var(--font-sm)' }}>Repair</button>
-                        </div>
+                    <div className="filter-tabs" style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                        {view === 'day' && (
+                            <div style={{ display: 'flex', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', padding: '2px' }}>
+                                <button className={\ilter-tab \\} onClick={() => setTeamFilter('all')} style={{ padding: '4px 12px', fontSize: 'var(--font-sm)' }}>All Teams</button>
+                                <button className={\ilter-tab \\} onClick={() => setTeamFilter('install')} style={{ padding: '4px 12px', fontSize: 'var(--font-sm)' }}>Install</button>
+                                <button className={\ilter-tab \\} onClick={() => setTeamFilter('repair')} style={{ padding: '4px 12px', fontSize: 'var(--font-sm)' }}>Repair</button>
+                            </div>
+                        )}
                         <div style={{ display: 'flex', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', padding: '2px' }}>
                             {['month', 'week', 'day'].map(v => (
-                                <button key={v} className={`filter-tab ${view === v ? 'active' : ''}`} onClick={() => setView(v)} style={{ padding: '4px 12px', fontSize: 'var(--font-sm)' }}>
+                                <button key={v} className={\ilter-tab \\} onClick={() => setView(v)} style={{ padding: '4px 12px', fontSize: 'var(--font-sm)' }}>
                                     {v.charAt(0).toUpperCase() + v.slice(1)}
                                 </button>
                             ))}
@@ -173,22 +208,22 @@ export default function Schedule() {
                         <div className="calendar-grid">
                             {calendarDays.map(day => {
                                 const dateStr = format(day, 'yyyy-MM-dd');
-                                const dayJobs = jobs.filter(j => j.scheduled_date === dateStr && (teamFilter === 'all' || j.technicians?.team === teamFilter));
+                                const dayJobs = jobs.filter(j => j.scheduled_date === dateStr);
                                 return (
-                                    <div
-                                        key={dateStr}
-                                        className={`calendar-day ${isToday(day) ? 'today' : ''} ${!isSameMonth(day, currentDate) && view === 'month' ? 'other-month' : ''}`}
+                                    <DroppableDay 
+                                        key={dateStr} 
+                                        date={day} 
+                                        dateStr={dateStr} 
+                                        isCurrentMonth={isSameMonth(day, currentDate)} 
+                                        isToday={isToday(day)} 
+                                        view={view}
                                         onClick={() => handleDayClick(day)}
                                     >
-                                        <div className="day-number">{format(day, 'd')}</div>
-                                        {dayJobs.slice(0, 3).map(j => (
-                                            <div key={j.id} className={`calendar-event ${j.job_type}`} onClick={e => handleJobClick(j, e)} title={`${j.customers?.name} - ${j.job_type}`}>
-                                                {j.scheduled_time && <span>{j.scheduled_time} </span>}
-                                                {j.customers?.name || 'Job'}
-                                            </div>
+                                        {dayJobs.slice(0, view === 'week' ? 10 : 3).map(j => (
+                                            <DraggableEvent key={j.id} job={j} onClick={(e) => handleJobClick(j, e)} />
                                         ))}
-                                        {dayJobs.length > 3 && <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', paddingLeft: '6px' }}>+{dayJobs.length - 3} more</div>}
-                                    </div>
+                                        {dayJobs.length > 3 && view === 'month' && <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', paddingLeft: '6px' }}>+{dayJobs.length - 3} more</div>}
+                                    </DroppableDay>
                                 );
                             })}
                         </div>
@@ -196,34 +231,35 @@ export default function Schedule() {
                 )}
 
                 {view === 'day' && (
-                    <div style={{ padding: 'var(--space-xl)' }}>
-                        {(() => {
-                            const dateStr = format(currentDate, 'yyyy-MM-dd');
-                            const dayJobs = jobs.filter(j => j.scheduled_date === dateStr && (teamFilter === 'all' || j.technicians?.team === teamFilter)).sort((a, b) => (a.scheduled_time || '').localeCompare(b.scheduled_time || ''));
-                            if (dayJobs.length === 0) return <div className="empty-state"><Clock size={32} /><p>No jobs scheduled</p></div>;
-                            return (
-                                <div className="activity-list">
-                                    {dayJobs.map(j => (
-                                        <div key={j.id} className="board-card" onClick={e => handleJobClick(j, e)}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
-                                                <strong>{j.customers?.name || 'Customer'}</strong>
-                                                <span className={`badge badge-${getJobBadge(j.job_type)}`}>{j.job_type}</span>
-                                            </div>
-                                            <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', display: 'flex', gap: '16px' }}>
-                                                {j.scheduled_time && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={12} /> {j.scheduled_time}</span>}
-                                                {j.technicians?.name && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12} /> {j.technicians.name}</span>}
-                                            </div>
-                                            <div style={{ marginTop: '8px' }}>
-                                                <span className={`badge badge-${getStatusBadge(j.status)} badge-dot`}>{j.status?.replace('_', ' ')}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            );
-                        })()}
+                    <div className="tech-board-container" style={{ display: 'flex', gap: '16px', padding: '16px', overflowX: 'auto', minHeight: '600px', background: 'var(--bg-card)' }}>
+                        <DroppableTechColumn techId="unassigned" techName="Unassigned" jobs={jobs.filter(j => j.scheduled_date === format(currentDate, 'yyyy-MM-dd') && !j.technician_id)} onClick={handleJobClick} />
+                        {filteredTechs.map(tech => (
+                            <DroppableTechColumn 
+                                key={tech.id} 
+                                techId={tech.id} 
+                                techName={tech.name} 
+                                jobs={jobs.filter(j => j.scheduled_date === format(currentDate, 'yyyy-MM-dd') && j.technician_id === tech.id)} 
+                                onClick={handleJobClick}
+                            />
+                        ))}
                     </div>
                 )}
             </div>
+
+            <DragOverlay dropAnimation={null}>
+                {activeDragJob ? (
+                    view === 'day' ? (
+                        <div className="board-card dragging-overlay" style={{ background: '#fff', border: '2px solid var(--primary)', borderRadius: '8px', padding: '12px', boxShadow: '0 8px 16px rgba(0,0,0,0.1)' }}>
+                            <strong>{activeDragJob.customers?.name || 'Job'}</strong>
+                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{activeDragJob.job_type}</div>
+                        </div>
+                    ) : (
+                        <div className={\calendar-event \ dragging-overlay\} style={{ opacity: 0.9, boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }}>
+                            {activeDragJob.customers?.name || 'Job'}
+                        </div>
+                    )
+                ) : null}
+            </DragOverlay>
 
             {showJobForm && (
                 <JobFormModal
@@ -236,9 +272,107 @@ export default function Schedule() {
                     onClose={() => { setShowJobForm(false); setSelectedJob(null); }}
                 />
             )}
+        </DndContext>
+    );
+}
+
+// ------ DND Components ------
+
+function DroppableDay({ date, dateStr, isCurrentMonth, isToday, view, onClick, children }) {
+    const { isOver, setNodeRef } = useDroppable({ id: \date|\\ });
+    
+    return (
+        <div
+            ref={setNodeRef}
+            className={\calendar-day \ \\}
+            style={{ 
+                backgroundColor: isOver ? 'var(--bg-input)' : '',
+                border: isOver ? '1px dashed var(--primary)' : ''
+            }}
+            onClick={onClick}
+        >
+            <div className="day-number">{format(date, 'd')}</div>
+            {children}
         </div>
     );
 }
+
+function DraggableEvent({ job, onClick }) {
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: \job|\\ });
+
+    return (
+        <div
+            ref={setNodeRef}
+            {...listeners}
+            {...attributes}
+            className={\calendar-event \\}
+            style={{ opacity: isDragging ? 0.3 : 1, cursor: 'grab' }}
+            onClick={onClick}
+            title={\\ - \\}
+        >
+            {job.scheduled_time && <span>{job.scheduled_time} </span>}
+            {job.customers?.name || 'Job'}
+        </div>
+    );
+}
+
+function DroppableTechColumn({ techId, techName, jobs, onClick }) {
+    const { isOver, setNodeRef } = useDroppable({ id: \	ech|\\ });
+
+    return (
+        <div 
+            style={{ 
+                background: isOver ? 'var(--bg-background)' : 'var(--bg-input)', 
+                minWidth: '280px', 
+                borderRadius: 'var(--radius-lg)', 
+                padding: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                border: isOver ? '1px dashed var(--primary)' : '1px solid transparent',
+                transition: 'all 0.2s ease'
+            }}
+        >
+            <div style={{ fontWeight: 600, paddingBottom: '12px', borderBottom: '1px solid var(--border)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <User size={16} color="var(--text-secondary)" />
+                {techName}
+                <span className="badge badge-gray" style={{ marginLeft: 'auto' }}>{jobs.length}</span>
+            </div>
+            <div ref={setNodeRef} style={{ flex: 1, minHeight: '100px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {jobs.map(j => (
+                    <DraggableTechCard key={j.id} job={j} onClick={onClick} />
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function DraggableTechCard({ job, onClick }) {
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: \job|\\ });
+
+    return (
+        <div 
+            ref={setNodeRef} 
+            {...listeners} 
+            {...attributes}
+            className="board-card" 
+            style={{ opacity: isDragging ? 0.3 : 1, cursor: 'grab', margin: 0 }}
+            onClick={(e) => onClick(job, e)}
+        >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
+                <strong>{job.customers?.name || 'Customer'}</strong>
+                <span className={\adge badge-\\}>{job.job_type}</span>
+            </div>
+            <div style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', display: 'flex', gap: '16px' }}>
+                {job.scheduled_time && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={12} /> {job.scheduled_time}</span>}
+            </div>
+            <div style={{ marginTop: '8px' }}>
+                <span className={\adge badge-\ badge-dot\}>{job.status?.replace('_', ' ')}</span>
+            </div>
+        </div>
+    );
+}
+
+// ------ Helpers & Modals (Same as before) ------
 
 function JobFormModal({ job, defaultDate, customers, technicians, onSave, onDelete, onClose }) {
     const [form, setForm] = useState({
