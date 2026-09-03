@@ -14,26 +14,29 @@ export default function Proposals() {
     const [showForm, setShowForm] = useState(false);
     const [editProposal, setEditProposal] = useState(null);
     const [printProposal, setPrintProposal] = useState(null);
+    const [pricebook, setPricebook] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => { loadData(); }, []);
 
     async function loadData() {
-        const [invRes, custRes, jobsRes] = await Promise.all([
+        const [invRes, custRes, jobsRes, pbRes] = await Promise.all([
             supabase.from('proposals').select('*, customers(name), proposal_items(*)').order('created_at', { ascending: false }),
             supabase.from('customers').select('id, name'),
             supabase.from('jobs').select('id, job_type, customer_id, customers(name)').eq('status', 'completed'),
-        ]);
-        setProposals(invRes.data || []);
-        setCustomers(custRes.data || []);
-        setJobs(jobsRes.data || []);
+            supabase.from('pricebook').select('*').order('category')
+        , supabase.from('pricebook').select('*')]);
+        setProposals(invRes.data || []); setCustomers(custRes.data || []); setJobs(jobsRes.data || []); setPricebook(pbRes?.data || []);
+        setPricebook(arguments[0][arguments[0].length-1]?.data || []);
         setLoading(false);
     }
 
     async function handleSave(proposalData, items, customTaxRate) {
-        const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.rate), 0);
-        const tax = subtotal * customTaxRate;
-        const total = subtotal + tax;
+            const subtotal = form.items.reduce((s, i) => s + (i.quantity * i.rate), 0);
+    const discountAmt = form.discount_type === 'percent' ? (subtotal * (Number(form.discount_value) || 0) / 100) : (Number(form.discount_value) || 0);
+    const taxableAmount = Math.max(0, subtotal - discountAmt);
+    const tax = taxableAmount * (Number(form.taxRate) || 0) / 100;
+    const total = taxableAmount + tax;
 
         const proposalPayload = {
             ...proposalData,
@@ -176,6 +179,7 @@ export default function Proposals() {
                 <ProposalFormModal
                     proposal={editProposal}
                     customers={customers}
+                    pricebook={pricebook}
                     onSave={handleSave}
                     onClose={() => { setShowForm(false); setEditProposal(null); }}
                 />
@@ -188,7 +192,8 @@ export default function Proposals() {
     );
 }
 
-function ProposalFormModal({ proposal, customers, onSave, onClose }) {
+function ProposalFormModal({ proposal, customers, onSave, onClose , pricebook = []}) {
+    const [activeSearch, setActiveSearch] = useState(null);
     const [form, setForm] = useState({
         customer_id: proposal?.customer_id || '',
         status: proposal?.status || 'draft',
@@ -219,9 +224,11 @@ function ProposalFormModal({ proposal, customers, onSave, onClose }) {
         setItems(updated);
     }
 
-    const subtotal = items.reduce((s, i) => s + (i.quantity * i.rate), 0);
-    const tax = Math.max(0, subtotal) * taxRate; // Don't tax negative subtotals
-    const total = subtotal + tax;
+        const subtotal = form.items.reduce((s, i) => s + (i.quantity * i.rate), 0);
+    const discountAmt = form.discount_type === 'percent' ? (subtotal * (Number(form.discount_value) || 0) / 100) : (Number(form.discount_value) || 0);
+    const taxableAmount = Math.max(0, subtotal - discountAmt);
+    const tax = taxableAmount * (Number(form.taxRate) || 0) / 100;
+    const total = taxableAmount + tax;
 
     return (
         <div className="modal-overlay" onClick={onClose}>

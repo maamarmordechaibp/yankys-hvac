@@ -34,9 +34,11 @@ export default function Invoices() {
     }
 
     async function handleSave(invoiceData, items, customTaxRate) {
-        const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.rate), 0);
-        const tax = subtotal * customTaxRate;
-        const total = subtotal + tax;
+            const subtotal = form.items.reduce((s, i) => s + (i.quantity * i.rate), 0);
+    const discountAmt = form.discount_type === 'percent' ? (subtotal * (Number(form.discount_value) || 0) / 100) : (Number(form.discount_value) || 0);
+    const taxableAmount = Math.max(0, subtotal - discountAmt);
+    const tax = taxableAmount * (Number(form.taxRate) || 0) / 100;
+    const total = taxableAmount + tax;
 
         const invoicePayload = {
             ...invoiceData,
@@ -180,6 +182,7 @@ export default function Invoices() {
                     invoice={editInvoice}
                     customers={customers}
                     pricebook={pricebook}
+                    pricebook={pricebook}
                     onSave={handleSave}
                     onClose={() => { setShowForm(false); setEditInvoice(null); }}
                 />
@@ -192,7 +195,8 @@ export default function Invoices() {
     );
 }
 
-function InvoiceFormModal({ invoice, customers, pricebook, onSave, onClose }) {
+function InvoiceFormModal({ invoice, customers, pricebook = [], onSave, onClose}) {
+    const [activeSearch, setActiveSearch] = useState(null);
     const [form, setForm] = useState({
         customer_id: invoice?.customer_id || '',
         status: invoice?.status || 'draft',
@@ -232,9 +236,11 @@ function InvoiceFormModal({ invoice, customers, pricebook, onSave, onClose }) {
         setItems(updated);
     }
 
-    const subtotal = items.reduce((s, i) => s + (i.quantity * i.rate), 0);
-    const tax = Math.max(0, subtotal) * taxRate; // Don't tax negative subtotals
-    const total = subtotal + tax;
+        const subtotal = form.items.reduce((s, i) => s + (i.quantity * i.rate), 0);
+    const discountAmt = form.discount_type === 'percent' ? (subtotal * (Number(form.discount_value) || 0) / 100) : (Number(form.discount_value) || 0);
+    const taxableAmount = Math.max(0, subtotal - discountAmt);
+    const tax = taxableAmount * (Number(form.taxRate) || 0) / 100;
+    const total = taxableAmount + tax;
 
     return (
         <div className="modal-overlay" onClick={onClose}>
